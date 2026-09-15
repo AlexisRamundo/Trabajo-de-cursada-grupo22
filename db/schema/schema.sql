@@ -1,0 +1,9 @@
+CREATE TABLE tasks (
+    id SERIAL PRIMARY KEY,
+    titulo VARCHAR(255) NOT NULL,
+    descripcion TEXT NOT NULL DEFAULT '',
+    estado VARCHAR(50) NOT NULL DEFAULT 'Pendiente',
+    prioridad VARCHAR(50) NOT NULL DEFAULT 'Media',
+    creado_en TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    vencimiento TIMESTAMP WITH TIME ZONE
+);

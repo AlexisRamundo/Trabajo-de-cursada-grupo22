@@ -1,0 +1,16 @@
+# Binarios y ejecutables temporales
+servidor
+servidor.exe
+*.exe
+tmp/
+
+# Script local de prueba para Windows (solo test.sh debe subirse a Git)
+test.ps1
+
+# Variables de entorno locales (si llegan a existir)
+.env
+.env.local
+
+# Archivos de cobertura de tests
+coverage.out
+coverage.html

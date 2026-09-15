@@ -1,0 +1,23 @@
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: todolist-db-test
+    restart: "no"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: todolist_test
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/schema/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d todolist_test"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 3s
+
+volumes:
+  pgdata:

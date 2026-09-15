@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trabajo de Cursada: Mi Primera Aplicación Web</title>
+</head>
+
+<body>
+
+    <header>
+        <p>Programación Web - Trabajo Práctico N° 1 - Grupo 22</p>
+        <h1>App de gestión de tareas (To-Do List)</h1>
+    </header>
+
+    <section>
+        <p>
+            Esta aplicación web tiene como objetivo permitir a los usuarios gestionar eficientemente sus tareas
+            cotidianas, organizando sus actividades mediante un sistema simple y ordenado.
+        </p>
+    </section>
+
+    <section>
+        <h2>Definición del Dominio: Entidad llamada Tarea</h2>
+        <p>
+            Cada elemento dentro del sistema representará una tarea individual y contendrá la siguiente estructura
+            de datos:
+        </p>
+
+        <table border="1">
+            <thead>
+                <tr>
+                    <th>Campo</th>
+                    <th>Tipo</th>
+                    <th>Descripción</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>ID</td>
+                    <td><code>int</code></td>
+                    <td>Identificador único de la tarea</td>
+                </tr>
+                <tr>
+                    <td>Titulo</td>
+                    <td><code>string</code></td>
+                    <td>Nombre o título de la actividad</td>
+                </tr>
+                <tr>
+                    <td>Descripcion</td>
+                    <td><code>string</code></td>
+                    <td>Detalle explicativo de lo que se debe realizar</td>
+                </tr>
+                <tr>
+                    <td>Estado</td>
+                    <td><code>string</code></td>
+                    <td>Estado actual: Pendiente, En Progreso o Completada</td>
+                </tr>
+                <tr>
+                    <td>Prioridad</td>
+                    <td><code>string</code></td>
+                    <td>Nivel de prioridad: Baja, Media o Alta</td>
+                </tr>
+                <tr>
+                    <td>CreadoEn</td>
+                    <td><code>time.Time</code></td>
+                    <td>Fecha y hora en la que se dio de alta la tarea</td>
+                </tr>
+                <tr>
+                    <td>Vencimiento</td>
+                    <td><code>time.Time</code></td>
+                    <td>Fecha y hora en la que vence la tarea</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+</body>
+
+</html>
