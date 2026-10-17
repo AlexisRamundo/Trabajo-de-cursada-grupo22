@@ -1,0 +1,11 @@
+.git
+bin/
+tmp/
+*.exe
+*.bin
+test.ps1
+test-api.ps1
+coverage.out
+coverage.html
+.env
+*.log

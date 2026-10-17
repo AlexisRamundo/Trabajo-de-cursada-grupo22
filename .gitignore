@@ -4,8 +4,9 @@ servidor.exe
 *.exe
 tmp/
 
-# Script local de prueba para Windows (solo test.sh debe subirse a Git)
+# Script local de prueba para Windows (solo test.sh y test-api.sh deben subirse a Git)
 test.ps1
+test-api.ps1
 
 # Variables de entorno locales (si llegan a existir)
 .env
@@ -14,3 +15,7 @@ test.ps1
 # Archivos de cobertura de tests
 coverage.out
 coverage.html
+
+# Código generado por sqlc
+db/sqlc/*.go
+!db/sqlc/*_test.go

@@ -1,184 +1,206 @@
-# Trabajo de Cursada — Entrega 2: Persistiendo el Dominio
+# Trabajo de Cursada — Entrega 3: Exponiendo la Lógica como API
 
 ## App de Gestión de Tareas (To-Do List)
 
-Segunda entrega del Trabajo Práctico de cursada para la materia **Programación Web**. En esta etapa se establece la capa de persistencia permanente para la aplicación definida en la Entrega 1, utilizando una base de datos relacional **PostgreSQL**, consultas SQL tipadas y la herramienta de generación de código **sqlc**.
+Tercera entrega del TP de cursada. En esta etapa se construye y expone la **API REST** de la aplicación, conectando los endpoints HTTP con la capa de datos generada por **sqlc** e implementando las validaciones y reglas del dominio en Go.
 
-> **Estrategia de ramas Git:**
+> **Organización de ramas Git:**
 >
-> - Rama `tp1`: Contiene la Entrega 1 inicial (definición del dominio y servidor HTTP nativo).
-> - Rama `tp2`: Contiene la Entrega 2 con toda la infraestructura de persistencia, consultas SQL, código generado por sqlc, tests de integración y automatización con Docker.
+> - Rama `tp1`: Entrega 1 inicial (definición del dominio y servidor HTTP básico).
+> - Rama `tp2`: Entrega 2 (persistencia en PostgreSQL, sqlc, pruebas de base de datos y automatización).
+> - Rama `tp3`: Entrega 3 (API REST completa con endpoints CRUD y filtros, validaciones, middleware, contenedorización Docker multi-stage y pruebas con Hurl).
 
 ---
 
-## 1. Diseño de la Base de Datos y Persistencia
+## 1. Arquitectura de la aplicación (Three-Tier)
 
-Continuando con el dominio de **Gestión de Tareas (_To-Do List_)**, se definió la tabla principal `tasks` en PostgreSQL.
+El proyecto (que ahora crecio bastante) sigue una separación clara de responsabilidades en tres capas:
 
-### Modelo Relacional (`schema.sql` / `db/schema/schema.sql`)
-
-### Justificación de Atributos y Tipos de Datos:
-
-- **`id` (`SERIAL PRIMARY KEY`):** Identificador numérico único autoincremental de 32 bits (mapeado a `int32` en Go).
-- **`titulo` (`VARCHAR(255) NOT NULL`):** Nombre o título obligatorio de la tarea.
-- **`descripcion` (`TEXT NOT NULL DEFAULT ''`):** Descripción detallada de la tarea; admite texto sin límite rígido.
-- **`estado` (`VARCHAR(50) NOT NULL DEFAULT 'Pendiente'`):** Estado del ciclo de vida de la tarea (_"Pendiente"_, _"En Progreso"_, _"Completada"_).
-- **`prioridad` (`VARCHAR(50) NOT NULL DEFAULT 'Media'`):** Nivel de urgencia (_"Baja"_, _"Media"_, _"Alta"_).
-- **`creado_en` (`TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP`):** Marca temporal con zona horaria generada automáticamente por el motor de base de datos.
-- **`vencimiento` (`TIMESTAMP WITH TIME ZONE`):** Fecha límite opcional/nullable (mapeada a `sql.NullTime` en Go).
+1. **Capa de Presentación / API REST (`main.go`, `pkg/handlers/`):**  
+   Maneja el protocolo HTTP, enrutamiento, deserialización de peticiones JSON, invocación de la lógica y envío de respuestas tipadas con códigos de estado HTTP (`200`, `201`, `204`, `400`, `404`, `405`, `500`).
+2. **Capa de Lógica del Negocio (`pkg/models/`):**  
+   Define la entidad `Task` y funciones puras desacopladas de la web (`ValidateTask`, `ApplyDefaults`) que validan restricciones de negocio y valores por defecto.
+3. **Capa de Datos y Persistencia (`db/sqlc/`, PostgreSQL):**  
+   Acceso la base de datos generado por `sqlc`, transacciones y ejecución de consultas SQL parametrizadas sin riesgo de inyecciones SQL.
 
 ---
 
-## 2. Definición de Consultas CRUD (`queries.sql` / `db/queries/queries.sql`)
+## 2. Endpoints de la API REST
 
-Se escribieron las consultas SQL para las operaciones CRUD fundamentales utilizando las anotaciones requeridas por **sqlc**:
+Todos los endpoints reciben y emiten datos en formato JSON (`Content-Type: application/json`). La API incluye además soporte completo para **CORS** (`Access-Control-Allow-Origin: *`, `OPTIONS preflight`) facilitando el consumo directo desde interfaces web en el navegador (para su consumo en el TP4).
 
-- **Crear registro (`CreateTask`):**
-- **Obtener por ID (`GetTaskByID`):**
-- **Listar registros (`ListTasks`):**
-- **Actualizar registro (`UpdateTask`):**
-- **Eliminar registro (`DeleteTask`):**
+### Endpoints CRUD principales
 
-### Consultas Avanzadas:
+| Método   | Endpoint                   | Descripción                                              | Código Éxito     | Códigos de Error                   |
+| :------- | :------------------------- | :------------------------------------------------------- | :--------------- | :--------------------------------- |
+| `POST`   | `/tasks`                   | Crear una nueva tarea con validación de datos            | `201 Created`    | `400 Bad Request`                  |
+| `GET`    | `/tasks`                   | Listar tareas (con soporte de filtros por query params)  | `200 OK`         | `500 Internal Server Error`        |
+| `GET`    | `/tasks/{id}`              | Obtener el detalle de una tarea por su ID                | `200 OK`         | `400 Bad Request`, `404 Not Found` |
+| `PUT`    | `/tasks/{id}`              | Actualizar todos los campos de una tarea existente       | `200 OK`         | `400 Bad Request`, `404 Not Found` |
+| `PATCH`  | `/tasks/{id}`              | Acción rápida: marcar tarea directamente como Completada | `200 OK`         | `400 Bad Request`, `404 Not Found` |
+| `DELETE` | `/tasks/{id}`              | Eliminar una tarea por su ID                             | `204 No Content` | `400 Bad Request`, `404 Not Found` |
+| `DELETE` | `/tasks?estado=Completada` | Limpieza masiva en lote de todas las tareas completadas  | `200 OK`         | `400 Bad Request`                  |
+| `GET`    | `/health`                  | Chequeo de salud del servicio (liveness/readiness)       | `200 OK`         | —                                  |
 
-- **1. Ordenar por estado (Pendiente) y fecha de vencimiento (`ListPendingTasksOrderByDueDate`):**
-- **2. Filtrado por prioridad (`ListTasksByPriority`):**
-- **3. Tareas completadas en los últimos X días con conteo total (`ListCompletedTasksInLastDays`):**
+### Endpoints especializados y métricas (Dashboard)
 
-- **4. Tareas que vencen en los siguientes X días (`ListTasksDueInNextDays`):**
-- **5. Búsqueda global de palabra clave en título y descripción (`SearchTasks`):**
-- **6. Métricas y estadísticas de tareas para dashboard (`GetTaskMetrics`):**
-- **7. Detección de tareas vencidas atrasadas (`ListOverdueTasks`):**
-- **8. Acción rápida: Marcar tarea como completada (`MarkTaskCompleted`):**
-- **9. Limpieza en lote de tareas completadas (`DeleteCompletedTasks`):**
+| Método | Endpoint         | Descripción                                                     | Código Éxito |
+| :----- | :--------------- | :-------------------------------------------------------------- | :----------- |
+| `GET`  | `/tasks/metrics` | Resumen: total, pendientes, en progreso, completadas y vencidas | `200 OK`     |
+| `GET`  | `/tasks/overdue` | Listar tareas vencidas (`vencimiento < NOW()` y no completadas) | `200 OK`     |
 
-### Ventajas del enfoque con `sqlc`:
+### Parámetros de Consulta (Query Params) en `GET /tasks`
 
-1. **Seguridad estricta contra inyecciones SQL:** Todas las consultas son parametrizadas (`$1`, `$2`, etc.).
-2. **Tipado estático en tiempo de compilación:** `sqlc` valida el esquema contra las consultas y genera structs e interfaces Go fuertemente tipadas.
-3. **Sin sobrecarga en tiempo de ejecución:** A diferencia de un ORM pesado, `sqlc` genera código nativo con `database/sql` sin reflection en runtime.
+El endpoint `GET /tasks` permite filtrar, buscar y ordenar las tareas para alimentar vistas dinámicas del frontend:
+
+- `GET /tasks?q=palabra`: Búsqueda textual por palabra clave en título y descripción (`ILIKE`).
+- `GET /tasks?prioridad=Alta`: Filtra tareas por prioridad (`Alta`, `Media`, `Baja`).
+- `GET /tasks?orden=vencimiento`: Retorna tareas pendientes ordenadas ascendentemente por fecha de vencimiento más próxima.
+- `GET /tasks?vence_en=7`: Lista tareas que vencen en los próximos _N_ días.
+- `GET /tasks?completadas_ultimos_dias=30`: Lista tareas completadas dentro de la ventana de los últimos _N_ días.
+- `GET /tasks` (sin parámetros): Retorna todas las tareas ordenadas por ID.
 
 ---
 
-## 3. Generación de Código con `sqlc`
+## 3. Validaciones de Dominio y Middleware
 
-El archivo de configuración [`sqlc.yaml`](./sqlc.yaml) define el motor PostgreSQL y las rutas de entrada/salida:
-
-```yaml
-version: "2"
-sql:
-  - engine: "postgresql"
-    schema: "db/schema/schema.sql"
-    queries: "db/queries/queries.sql"
-    gen:
-      go:
-        package: "db"
-        out: "db/sqlc"
-        sql_package: "database/sql"
-```
-
-Al ejecutar `sqlc generate`, se producen en `db/sqlc/`:
-
-- `models.go`: Estructura Go `Task` representativa de la tabla.
-- `queries.sql.go`: Métodos Go (`CreateTask`, `GetTaskByID`, `ListTasks`, `UpdateTask`, `DeleteTask`) listos para usar con `*sql.DB` o transacciones.
-- `db.go`: Constructor `New(db)` e interfaz común `DBTX`.
+- **Validaciones (`pkg/models/models.go`):**
+  - El título es obligatorio y no puede superar los 255 caracteres.
+  - El estado debe ser uno de: `"Pendiente"`, `"En Progreso"`, `"Completada"`.
+  - La prioridad debe ser una de: `"Baja"`, `"Media"`, `"Alta"`.
+  - `ApplyDefaults`: Asigna `"Pendiente"` y `"Media"` automáticamente si no se especifican.
+- **Middleware de Observabilidad (`main.go`):**
+  - Implementa el patrón `loggingMiddleware(next http.Handler)` enseñado en la cátedra.
+  - Registra cada petición entrante con timestamp, método, URL, IP remota y duración de procesamiento.
 
 ---
 
 ## 4. Estructura del Proyecto
 
 ```text
-├── .gitignore               # Exclusión de binarios, archivos temporales y entornos
-├── docker-compose.yml       # Contenedor de PostgreSQL aislado con healthcheck
-├── Makefile                 # Automatización de tareas (test, generate, up, down)
-├── test.sh                  # Script Bash con ciclo de vida completo de pruebas
-├── schema.sql               # Esquema DDL en la raíz
-├── queries.sql              # Consultas CRUD con anotaciones sqlc en la raíz
+├── .dockerignore            # Exclusión de archivos para el contexto de build Docker
+├── .gitignore               # Exclusión de binarios, scripts locales y temporales
+├── Dockerfile               # Multi-stage build optimizado (golang:alpine -> alpine)
+├── docker-compose.yml       # Stack completo: PostgreSQL (db) + API REST (api)
+├── Makefile                 # Automatización de tareas (test-api, test, run, clean)
+├── test-api.sh              # Script Bash para probar la API (TP3)
+├── test.sh                  # Script Bash para suite de pruebas unitarias (TP2)
+├── requests.hurl            # Archivo de pruebas reproducibles con HURL
+├── schema.sql               # Esquema DDL de PostgreSQL
+├── queries.sql              # Consultas SQL con anotaciones sqlc
 ├── sqlc.yaml                # Configuración de sqlc
-├── README.md                # Documentación de la 2da Entrega
+├── README.md                # Documentación de la Entrega 3
 ├── go.mod                   # Definición del módulo y dependencias Go
 ├── go.sum                   # Checksums de dependencias Go
-├── main.go                  # Servidor web (TP1)
 ├── index.html               # Frontend básico (TP1)
+├── main.go                  # Servidor web (TP1). Punto de entrada del servidor HTTP y middleware
+├── pkg/
+│   ├── handlers/
+│   │   └── handler.go       # Handlers HTTP CRUD y queries
+│   └── models/
+│       ├── models.go        # Entidades del dominio, defaults y validaciones
+│       └── models_test.go   # Pruebas unitarias de la lógica pura (Table-Driven)
 └── db/
-    ├── schema/
-    │   └── schema.sql       # Esquema DDL de PostgreSQL
-    ├── queries/
-    │   └── queries.sql      # Consultas SQL CRUD
-    └── sqlc/
-        ├── db.go            # Inicialización de queries generado por sqlc
-        ├── models.go        # Structs Go de modelos generados
-        ├── queries.sql.go   # Implementación de métodos CRUD generados
-        └── tasks_test.go    # Suite de pruebas unitarias/integración
+    ├── schema/ schema.sql    # DDL relacional de tasks
+    ├── queries/ queries.sql  # Consultas CRUD y avanzadas
+    └── sqlc/ tasks_test.go   # Suite de pruebas unitarias/integración
 ```
 
 ---
 
-## 5. Requisitos Previos
+## 5. Requisitos previos
 
-Para ejecutar y probar este proyecto se requiere contar con:
+Para ejecutar y probar el proyecto se requiere:
 
-- **[Go](https://go.dev/dl/)** (versión 1.22 o superior).
 - **[Docker](https://docs.docker.com/get-docker/)** y **Docker Compose**.
-- **Bash** (disponible de forma nativa en Linux/macOS, o mediante Git Bash en Windows) o **Make**.
+- **[Go](https://go.dev/dl/)** (versión 1.22 o superior).
+- **Bash** para ejecutar los scripts (disponible en Linux/macOS y en Git Bash para Windows) o **Make**.
+- **[Hurl](https://hurl.dev/)** para ejecutar directamente el archivo `requests.hurl`.
 
 ---
 
-## 6. Ejecución de Tests y Automatización
+## 6. Ejecución de pruebas de la API (Consigna TP3)
 
-Para probar el proyecto tras clonar el repositorio y posicionarse en la rama `tp2`:
+Para probar el proyecto tras clonar el repositorio y posicionarse en la rama `tp3`:
 
 ```bash
-git checkout tp2
+git checkout tp3
 ```
 
-Se provee un script bash y un `Makefile` que realizan **todas las tareas necesarias de forma totalmente desatendida**:
+Se provee el script `test-api.sh` y el `Makefile` que realizan **todas las tareas de forma 100% desatendida**:
 
 ### Opción A (Recomendada con Bash):
 
 ```bash
-./test.sh
+./test-api.sh
 ```
 
-_(o también: `bash test.sh`)_
+_(o también: `bash test-api.sh`)_
 
 ### Opción B (Con Make):
 
 ```bash
-make test
+make test-api
 ```
 
 ---
 
-## 7. Fases de la Automatización (`test.sh` / `Makefile`)
+## 7. Fases de la automatización (`test-api.sh`)
 
-El script coordina de manera automatizada las tres etapas requeridas:
+El script coordina automáticamente las tres etapas:
 
 1. **Tareas Previas:**
    - Limpieza preventiva de contenedores o volúmenes huérfanos anteriores (`docker compose down -v`).
-   - Ejecución de `sqlc generate` para regenerar el código Go a partir del esquema y consultas.
-   - Verificación de dependencias y compilación Go (`go mod tidy`, `go test -c`).
-   - Levantamiento del contenedor de PostgreSQL mediante Docker Compose (`docker compose up -d db`).
-   - Espera activa (_polling_ con `pg_isready`) hasta que el motor de PostgreSQL esté listo para aceptar conexiones e inicialice la tabla `tasks`.
+   - Ejecución de `sqlc generate` para asegurar que el código Go esté sincronizado con el esquema.
+   - Verificación de dependencias y compilación del ejecutable (`go mod tidy`, `go build`).
+   - Levantamiento del contenedor de base de datos PostgreSQL (`docker compose up -d db`).
+   - Espera activa (_polling_ con `pg_isready`) hasta que PostgreSQL acepte conexiones.
+   - Levantamiento del servidor API en segundo plano y verificación de liveness (`/health`).
 
-2. **Ejecución de Tests:**
-   - Ejecución de las pruebas con `go test -v -count=1 ./...`.
-   - Se corre la prueba integral `TestQueries_CRUD` (`db/sqlc/tasks_test.go`) que valida:
-     1. `CreateTask`: Creación de registro y aserción de ID autoincremental, título, prioridad y fechas.
-     2. `GetTaskByID`: Lectura por ID y comparación de atributos.
-     3. `UpdateTask`: Modificación de campos y verificación de persistencia real en la base.
-     4. `ListTasks`: Comprobación de que la tarea actualizada se encuentra en la lista general.
-     5. `DeleteTask`: Eliminación del registro y validación de que consultas posteriores retornen `sql.ErrNoRows`.
-   - Se ejecuta además las `TestQueries_Avanzadas` (estructurada con el patrón _Table-Driven Tests_ de Go) que verifica:
-     1. `OrderByStatusAndDueDate`: Listado de tareas pendientes ordenadas cronológicamente por vencimiento y exclusión de completadas.
-     2. `FilterByPriority`: Filtrado exclusivo por prioridad (ej. "Alta") y manejo de prioridades inexistentes.
-     3. `CompletedTasksInLastDays`: Filtrado por estado completado dentro de una ventana temporal relativa de días, retornando las entidades junto al conteo numérico total del período (`COUNT(*) OVER()`).
-     4. `TasksDueInNextDays`: Identificación de tareas con vencimiento próximo en los siguientes X días ordenadas de forma ascendente.
-     5. `SearchTasks`: Búsqueda global insensible a mayúsculas/minúsculas (`ILIKE`) tanto en título como en descripción.
-     6. `GetTaskMetrics`: Cálculo de métricas y contadores de estado y vencidas para dashboard mediante agregaciones con `FILTER`.
-     7. `ListOverdueTasks`: Detección precisa de tareas con vencimiento superado que continúan sin completar.
-     8. `MarkTaskCompleted`: Transición de estado rápida a "Completada" y verificación de persistencia en disco.
-     9. `DeleteCompletedTasks`: Eliminación masiva de tareas finalizadas comprobando filas afectadas.
+2. **Prueba de cada uno de los Endpoints:**
+   - Si **Hurl** está instalado en el sistema, ejecuta `hurl --test requests.hurl`.
+   - Se valida:
+     1. `POST /tasks` (Crear tarea válida): verifica HTTP `201` y captura el `id` asignado.
+     2. `POST /tasks` (Título vacío): verifica HTTP `400` por error de validación.
+     3. `GET /tasks` (Listar tareas): verifica HTTP `200` y arreglo JSON no nulo.
+     4. `GET /tasks/{id}` (Obtener por ID): verifica HTTP `200` y concordancia de datos.
+     5. `GET /tasks/999999` (ID inexistente): verifica HTTP `404`.
+     6. `GET /tasks/invalido` (ID alfanumérico): verifica HTTP `400`.
+     7. `PUT /tasks/{id}` (Actualizar tarea): verifica HTTP `200` y persistencia de cambios.
+     8. `PUT /tasks/999999` (Actualizar ID inexistente): verifica HTTP `404`.
+     9. `POST /tasks` (Crear segunda tarea para pruebas avanzadas): verifica HTTP `201`.
+     10. `GET /tasks?prioridad=Alta` (Filtrar por prioridad): verifica HTTP `200`.
+     11. `GET /tasks?q=documentacion` (Búsqueda por palabra clave): verifica HTTP `200`.
+     12. `GET /tasks?orden=vencimiento` (Ordenar pendientes por vencimiento): verifica HTTP `200`.
+     13. `GET /tasks/metrics` (Dashboard de métricas): verifica HTTP `200` y conteos numéricos.
+     14. `GET /tasks/overdue` (Listado de tareas vencidas): verifica HTTP `200`.
+     15. `PATCH /tasks/{id}` (Acción rápida: marcar completada): verifica HTTP `200`.
+     16. `DELETE /tasks/{id}` (Eliminar tarea 2): verifica HTTP `204`.
+     17. `GET /tasks/{id}` (Verificar borrado de tarea 2): verifica HTTP `404`.
+     18. `DELETE /tasks?estado=Completada` (Borrado masivo en lote): verifica HTTP `200`.
+     19. `DELETE /tasks/999999` (Eliminar ID inexistente): verifica HTTP `404`.
 
 3. **Tareas Posteriores:**
-   - Registro de `trap` en Bash que asegura la detención y borrado total de contenedores y volúmenes de Docker (`docker compose down -v --remove-orphans`) tanto si las pruebas finalizan con éxito como si ocurre algún fallo.
+   - Mediante `trap cleanup EXIT`, detiene el proceso del servidor API y destruye los contenedores y volúmenes de Docker (`docker compose down -v --remove-orphans`), garantizando un entorno limpio tanto si las pruebas finalizan con éxito como ante cualquier error.
+
+---
+
+## 8. Ejecución del Servidor en Desarrollo
+
+### Con Docker Compose (Stack Completo):
+
+```bash
+docker compose up --build
+```
+
+_(o con `make run`)_
+
+### De forma local:
+
+```bash
+# 1. Levantar base de datos
+docker compose up -d db
+
+# 2. Iniciar servidor Go
+go run main.go
+```

@@ -19,5 +19,18 @@ services:
       retries: 20
       start_period: 3s
 
+  api:
+    build: .
+    container_name: todolist-api
+    restart: "no"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/todolist_test?sslmode=disable
+      PORT: ":8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   pgdata:
