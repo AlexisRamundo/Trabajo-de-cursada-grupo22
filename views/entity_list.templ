@@ -1,0 +1,49 @@
+package views
+
+import (
+	"fmt"
+	db "servidor/db/sqlc"
+)
+
+templ EntityList(tasks []db.Task) {
+	<div id="tasks-container" class="overflow-auto">
+		if len(tasks) == 0 {
+			<p><em>No hay tareas registradas en el sistema. Utiliza el formulario superior para crear la primera.</em></p>
+		} else {
+			<table class="striped">
+				<thead>
+					<tr>
+						<th scope="col">#</th>
+						<th scope="col">Título</th>
+						<th scope="col">Descripción</th>
+						<th scope="col">Estado</th>
+						<th scope="col">Prioridad</th>
+						<th scope="col">Creación</th>
+						<th scope="col">Vencimiento</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, task := range tasks {
+						<tr>
+							<th scope="row">{ fmt.Sprint(task.ID) }</th>
+							<td><strong>{ task.Titulo }</strong></td>
+							<td>{ task.Descripcion }</td>
+							<td>
+								<mark>{ task.Estado }</mark>
+							</td>
+							<td>{ task.Prioridad }</td>
+							<td>{ task.CreadoEn.Format("02/01/2006 15:04") }</td>
+							<td>
+								if task.Vencimiento.Valid {
+									{ task.Vencimiento.Time.Format("02/01/2006 15:04") }
+								} else {
+									<span>-</span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	</div>
+}

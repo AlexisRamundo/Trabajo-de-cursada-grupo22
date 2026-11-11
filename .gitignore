@@ -1,16 +1,19 @@
 # Binarios y ejecutables temporales
 servidor
 servidor.exe
+tmp_app
 *.exe
 tmp/
 
-# Script local de prueba para Windows (solo test.sh y test-api.sh deben subirse a Git)
+# Scripts locales para Windows (solo scripts .sh compatibles con Linux deben subirse a Git)
 test.ps1
 test-api.ps1
+run-app.ps1
 
-# Variables de entorno locales (si llegan a existir)
+# Variables de entorno locales
 .env
 .env.local
+!.env.example
 
 # Archivos de cobertura de tests
 coverage.out
@@ -19,3 +22,9 @@ coverage.html
 # Código generado por sqlc
 db/sqlc/*.go
 !db/sqlc/*_test.go
+
+# Código generado por templ
+views/*_templ.go
+views/*_templ.txt
+*_templ.go
+*_templ.txt

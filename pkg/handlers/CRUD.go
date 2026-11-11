@@ -1,5 +1,9 @@
 package handlers
 
+// El paquete handlers que corresponden al TP3 se divide en dos archivos:
+//   - CRUD.go:   estructura Handler, enrutamiento por método HTTP, operaciones CRUD
+//   - consultas.go: consultas avanzadas (filtros y búsquedas, métricas y tareas vencidas).
+
 import (
 	"database/sql"
 	"encoding/json"
@@ -23,6 +27,7 @@ type Handler struct {
 func New(queries *db.Queries) *Handler {
 	return &Handler{queries: queries}
 }
+
 
 // Manejador para /tasks/{id}
 func (h *Handler) TaskHandler(w http.ResponseWriter, r *http.Request) {
@@ -67,82 +72,21 @@ func (h *Handler) TasksHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GET /tasks - Listar todas las tareas con soporte para filtros y búsquedas avanzadas
+// GET /tasks - Listar todas las tareas.
+// Si la URL trae algún filtro (?q=, ?prioridad=, ?orden=, ?vence_en=, ?completadas_ultimos_dias=)
+// la búsqueda la resuelve filterTasks, definida en consultas.go.
 func (h *Handler) getTasks(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-
-	var (
-		tasks []db.Task
-		err   error
-	)
-
-	switch {
-	case q.Get("q") != "":
-		// Búsqueda por palabra clave en título o descripción
-		tasks, err = h.queries.SearchTasks(r.Context(), q.Get("q"))
-	case q.Get("prioridad") != "":
-		// Filtrado por nivel de prioridad (Baja, Media, Alta)
-		tasks, err = h.queries.ListTasksByPriority(r.Context(), q.Get("prioridad"))
-	case q.Get("orden") == "vencimiento":
-		// Tareas pendientes ordenadas por fecha de vencimiento próxima
-		tasks, err = h.queries.ListPendingTasksOrderByDueDate(r.Context())
-	case q.Get("vence_en") != "":
-		// Tareas que vencen en los siguientes X días
-		dias, parseErr := strconv.Atoi(q.Get("vence_en"))
-		if parseErr != nil || dias < 0 {
-			http.Error(w, "parametro 'vence_en' debe ser un numero de dias valido", http.StatusBadRequest)
-			return
-		}
-		tasks, err = h.queries.ListTasksDueInNextDays(r.Context(), int32(dias))
-	case q.Get("completadas_ultimos_dias") != "":
-		// Tareas completadas en los últimos X días
-		dias, parseErr := strconv.Atoi(q.Get("completadas_ultimos_dias"))
-		if parseErr != nil || dias < 0 {
-			http.Error(w, "parametro 'completadas_ultimos_dias' debe ser un numero de dias valido", http.StatusBadRequest)
-			return
-		}
-		rows, qErr := h.queries.ListCompletedTasksInLastDays(r.Context(), int32(dias))
-		if qErr != nil {
-			internalError(w, qErr)
-			return
-		}
-		result := make([]models.Task, 0, len(rows))
-		for _, row := range rows {
-			t := models.Task{
-				ID:          row.ID,
-				Titulo:      row.Titulo,
-				Descripcion: row.Descripcion,
-				Estado:      row.Estado,
-				Prioridad:   row.Prioridad,
-				CreadoEn:    row.CreadoEn,
-			}
-			if row.Vencimiento.Valid {
-				v := row.Vencimiento.Time
-				t.Vencimiento = &v
-			}
-			result = append(result, t)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(result)
+	if h.filterTasks(w, r) {
 		return
-	default:
-		// Listado estándar de todas las tareas
-		tasks, err = h.queries.ListTasks(r.Context())
 	}
 
+	// Listado estándar de todas las tareas
+	tasks, err := h.queries.ListTasks(r.Context())
 	if err != nil {
 		internalError(w, err)
 		return
 	}
-
-	// make(...) para que una lista vacia se devuelva como [] y no como null
-	result := make([]models.Task, 0, len(tasks))
-	for _, t := range tasks {
-		result = append(result, toModel(t))
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	writeTasks(w, tasks)
 }
 
 // GET /tasks/{id} - Obtener una tarea especifica
@@ -234,6 +178,22 @@ func (h *Handler) updateTask(w http.ResponseWriter, r *http.Request, id int32) {
 	json.NewEncoder(w).Encode(toModel(task))
 }
 
+// PATCH /tasks/{id} - Accion rapida: marcar tarea directamente como completada
+func (h *Handler) markTaskCompleted(w http.ResponseWriter, r *http.Request, id int32) {
+	task, err := h.queries.MarkTaskCompleted(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "tarea no encontrada", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(toModel(task))
+}
+
 // DELETE /tasks/{id} - Eliminar una tarea
 func (h *Handler) deleteTask(w http.ResponseWriter, r *http.Request, id int32) {
 	// DeleteTask no falla si el id no existe, por eso buscamos primero para poder devolver 404
@@ -252,69 +212,6 @@ func (h *Handler) deleteTask(w http.ResponseWriter, r *http.Request, id int32) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// GET /tasks/metrics - Obtener metricas y resumen estadistico de tareas
-func (h *Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Metodo no permitido", http.StatusMethodNotAllowed)
-		return
-	}
-
-	m, err := h.queries.GetTaskMetrics(r.Context())
-	if err != nil {
-		internalError(w, err)
-		return
-	}
-
-	res := models.TaskMetrics{
-		Total:       m.Total,
-		Pendientes:  m.Pendientes,
-		EnProgreso:  m.EnProgreso,
-		Completadas: m.Completadas,
-		Vencidas:    m.Vencidas,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(res)
-}
-
-// GET /tasks/overdue - Listar tareas vencidas (vencimiento < NOW() y no completadas)
-func (h *Handler) OverdueHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Metodo no permitido", http.StatusMethodNotAllowed)
-		return
-	}
-
-	tasks, err := h.queries.ListOverdueTasks(r.Context())
-	if err != nil {
-		internalError(w, err)
-		return
-	}
-
-	result := make([]models.Task, 0, len(tasks))
-	for _, t := range tasks {
-		result = append(result, toModel(t))
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
-}
-
-// PATCH /tasks/{id} - Accion rapida: marcar tarea directamente como completada
-func (h *Handler) markTaskCompleted(w http.ResponseWriter, r *http.Request, id int32) {
-	task, err := h.queries.MarkTaskCompleted(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) {
-		http.Error(w, "tarea no encontrada", http.StatusNotFound)
-		return
-	}
-	if err != nil {
-		internalError(w, err)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(toModel(task))
 }
 
 // DELETE /tasks?estado=Completada - Limpieza en lote de tareas completadas
@@ -336,6 +233,18 @@ func (h *Handler) deleteTasks(w http.ResponseWriter, r *http.Request) {
 		"mensaje":         "tareas completadas eliminadas",
 		"filas_afectadas": affected,
 	})
+}
+
+// writeTasks convierte una lista de db.Task a models.Task y la responde como JSON.
+// make(...) para que una lista vacia se devuelva como [] y no como null
+func writeTasks(w http.ResponseWriter, tasks []db.Task) {
+	result := make([]models.Task, 0, len(tasks))
+	for _, t := range tasks {
+		result = append(result, toModel(t))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 // Funcion para convertir el struct generado por sqlc (db.Task) en models.Task.

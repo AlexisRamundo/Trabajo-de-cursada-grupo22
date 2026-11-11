@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registra el driver "pgx" para database/sql
@@ -14,6 +15,40 @@ import (
 	db "servidor/db/sqlc"
 	"servidor/pkg/handlers"
 )
+
+// ensureAndLoadEnv verifica la existencia del archivo .env. Si no existe, lo genera
+// automáticamente a partir de .env.example (si este existe). Luego, lee y carga
+// las variables definidas en .env en el entorno del proceso.
+func ensureAndLoadEnv() {
+	if _, err := os.Stat(".env"); os.IsNotExist(err) {
+		if exampleData, err := os.ReadFile(".env.example"); err == nil {
+			if err := os.WriteFile(".env", exampleData, 0644); err == nil {
+				log.Println("Archivo .env creado automáticamente a partir de .env.example")
+			}
+		}
+	}
+
+	data, err := os.ReadFile(".env")
+	if err != nil {
+		return
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			val = strings.Trim(val, `"'`)
+			if os.Getenv(key) == "" {
+				_ = os.Setenv(key, val)
+			}
+		}
+	}
+}
 
 // loggingMiddleware registra cada petición HTTP entrante con método, ruta y dirección remota.
 func loggingMiddleware(next http.Handler) http.Handler {
@@ -25,23 +60,8 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// corsMiddleware habilita el consumo seguro de la API desde frontends en navegadores (para el TP4)
-// respondiendo las cabeceras requeridas para fetch cruzado y peticiones OPTIONS preflight.
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 // getDSN obtiene la cadena de conexión a PostgreSQL priorizando DATABASE_URL
-// o componiéndola a partir de variables individuales (DB_HOST, DB_PORT, etc) como vimos en las clases.
+// o componiéndola a partir de variables individuales (DB_HOST, DB_PORT, etc).
 func getDSN() string {
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		return dsn
@@ -70,6 +90,9 @@ func getDSN() string {
 }
 
 func main() {
+	// Inicialización automática de variables de entorno desde .env / .env.example
+	ensureAndLoadEnv()
+
 	// 1. Conexión a la base de datos
 	dsn := getDSN()
 	conn, err := sql.Open("pgx", dsn)
@@ -89,24 +112,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("No se pudo conectar a la base de datos: %v", err)
 	}
-	
 
-	// 2. Instancia del repositorio generado por sqlc y handlers CRUD
-	h := handlers.New(db.New(conn))
+	// 2. Instancia del repositorio generado por sqlc y handlers HTTP
+	queries := db.New(conn)
+	h := handlers.New(queries)
 
 	// 3. Registro de rutas
 	mux := http.NewServeMux()
+
+	// Endpoint de healthcheck
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok"}`))
 	})
-	// Endpoints especializados (prioridad por coincidencia más exacta en http.ServeMux)
-	mux.HandleFunc("/tasks/metrics", h.MetricsHandler)
-	mux.HandleFunc("/tasks/overdue", h.OverdueHandler)
-	// Endpoints principales de colección y de recurso individual
-	mux.HandleFunc("/tasks", h.TasksHandler)
-	mux.HandleFunc("/tasks/", h.TaskHandler)
+
+	// Handlers principales de la aplicación SSR con Templ (patrón PRG)
+	mux.HandleFunc("/", h.IndexHandler)
+	mux.HandleFunc("/tasks", h.CreateTaskHandler)
 
 	// 4. Configuración del puerto e inicio del servidor HTTP
 	port := os.Getenv("PORT")
@@ -116,17 +139,17 @@ func main() {
 		port = ":" + port
 	}
 
-	serverHandler := loggingMiddleware(corsMiddleware(mux))
-	
+	serverHandler := loggingMiddleware(mux)
+
 	fmt.Println("==================================================")
-	fmt.Println("   Mi Primera Aplicación Web       ")
-	fmt.Println("   Dominio: App de Gestión de Tareas (To-Do)  ")
+	fmt.Println("   Mi Primera Aplicación Web      ")
+	fmt.Println("   Dominio: App de Gestión de Tareas (To-Do)     ")
 	fmt.Printf("   Escuchando en: http://localhost%s\n", port)
 	fmt.Println("   Presione Ctrl+C para detener el servidor       ")
 	fmt.Println("==================================================")
 
 	// 5. Inicia el servidor HTTP
-	log.Printf("Servidor API REST iniciado en http://localhost%s/tasks\n", port)
+	log.Printf("Servidor SSR iniciado en http://localhost%s/\n", port)
 	if err := http.ListenAndServe(port, serverHandler); err != nil {
 		log.Fatalf("Error al iniciar el servidor: %v", err)
 	}

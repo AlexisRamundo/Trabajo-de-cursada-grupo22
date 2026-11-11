@@ -1,0 +1,30 @@
+package views
+
+import db "servidor/db/sqlc"
+
+templ IndexPage(tasks []db.Task) {
+	@Layout("App de gestión de tareas") {
+		<header style="margin-bottom: 2rem;">
+			<hgroup>
+				<h1>App de gestión de tareas (To-Do List) - Grupo 22 </h1>
+				<p>Programación Web - Renderizado del lado del servidor (TP5)</p>
+			</hgroup>
+		</header>
+		<section style="margin-bottom: 2rem;">
+			<article>
+				<header>
+					<h2>Nueva tarea</h2>
+				</header>
+				@EntityForm()
+			</article>
+		</section>
+		<section>
+			<article>
+				<header>
+					<h2>Listado de tareas</h2>
+				</header>
+				@EntityList(tasks)
+			</article>
+		</section>
+	}
+}

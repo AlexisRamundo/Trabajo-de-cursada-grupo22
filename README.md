@@ -1,206 +1,173 @@
-# Trabajo de Cursada — Entrega 3: Exponiendo la Lógica como API
+# Trabajo de Cursada — Entrega 5: Renderizado del Lado del Servidor con Templ
 
 ## App de Gestión de Tareas (To-Do List)
 
-Tercera entrega del TP de cursada. En esta etapa se construye y expone la **API REST** de la aplicación, conectando los endpoints HTTP con la capa de datos generada por **sqlc** e implementando las validaciones y reglas del dominio en Go.
+Seguimos desarrollando el TP de cursada y continuamos con la entrega, esta vez con la **parte 5 (TP5)**. En esta etapa se adopta la arquitectura de **Renderizado del Lado del Servidor (Server-Side Rendering - SSR)** integrando la vista directamente en el servidor Go mediante **Templ** y dandole estilo con **Pico.css**.
 
 > **Organización de ramas Git:**
 >
-> - Rama `tp1`: Entrega 1 inicial (definición del dominio y servidor HTTP básico).
-> - Rama `tp2`: Entrega 2 (persistencia en PostgreSQL, sqlc, pruebas de base de datos y automatización).
-> - Rama `tp3`: Entrega 3 (API REST completa con endpoints CRUD y filtros, validaciones, middleware, contenedorización Docker multi-stage y pruebas con Hurl).
+> - Rama `tp1`: Entrega 1 (Definición del dominio y servidor HTTP básico).
+> - Rama `tp2`: Entrega 2 (Persistencia con PostgreSQL, sqlc, pruebas de base de datos y automatización).
+> - Rama `tp3`: Entrega 3 (API REST completa con endpoints CRUD y filtros, validaciones, middleware, contenedorización Docker multi-stage y pruebas con Hurl)
+> - **Rama `tp5`**: Entrega 5 (Arquitectura SSR con componentes Templ, modularización en `pkg/handlers/`, formulario clásico con patrón PRG, estilos Pico.css y ejecución automatizada).
 
 ---
 
-## 1. Arquitectura de la aplicación (Three-Tier)
+## 1. Arquitectura de la aplicación (SSR con Go + Templ)
 
-El proyecto (que ahora crecio bastante) sigue una separación clara de responsabilidades en tres capas:
+El servidor Go asume la responsabilidad completa de construir la interfaz de usuario (HTML) y entregarla al cliente:
 
-1. **Capa de Presentación / API REST (`main.go`, `pkg/handlers/`):**  
-   Maneja el protocolo HTTP, enrutamiento, deserialización de peticiones JSON, invocación de la lógica y envío de respuestas tipadas con códigos de estado HTTP (`200`, `201`, `204`, `400`, `404`, `405`, `500`).
-2. **Capa de Lógica del Negocio (`pkg/models/`):**  
-   Define la entidad `Task` y funciones puras desacopladas de la web (`ValidateTask`, `ApplyDefaults`) que validan restricciones de negocio y valores por defecto.
-3. **Capa de Datos y Persistencia (`db/sqlc/`, PostgreSQL):**  
-   Acceso la base de datos generado por `sqlc`, transacciones y ejecución de consultas SQL parametrizadas sin riesgo de inyecciones SQL.
+**Capa de vistas / componentes (`views/`):**
 
----
+- **`layout.templ`**: Define la estructura base HTML5 (`<html>`, `<head>`, `<body>`), enlazando la hoja de estilos de **Pico.css** vía CDN y definiendo el contenedor principal semántico mediante `{ children... }`.
+- **`entity_form.templ`**: Componente `EntityForm()` que renderiza el formulario para la creación de tareas (`POST /tasks`) con validaciones HTML nativas y controles de fecha/hora.
+- **`entity_list.templ`**: Componente `EntityList(tasks []db.Task)` que recibe las entidades directamente de la base de datos y renderiza una tabla con formato y estados estilizados, contenida dentro de `<div id="tasks-container">`.
+- **`index.templ`**: Componente de página principal `IndexPage(tasks []db.Task)` que compone el `Layout`, encabezado, formulario y listado.
 
-## 2. Endpoints de la API REST
+**Capa de controladores y handlers (`pkg/handlers/` y `main.go`):**
 
-Todos los endpoints reciben y emiten datos en formato JSON (`Content-Type: application/json`). La API incluye además soporte completo para **CORS** (`Access-Control-Allow-Origin: *`, `OPTIONS preflight`) facilitando el consumo directo desde interfaces web en el navegador (para su consumo en el TP4).
+- **`pkg/handlers/ssr.go`**: Métodos asociados al struct `Handler` para la entrega SSR:
+  - `IndexHandler (GET /)`: Consulta la base de datos mediante `h.queries.ListTasks(ctx)` y renderiza el componente `views.IndexPage(tasks)`.
+  - `CreateTaskHandler (POST /tasks)`: Parsea los datos del formulario (`r.ParseForm()`), aplica las reglas de negocio de `pkg/models` (`ApplyDefaults` completa los valores por defecto y `ValidateTask` valida título, estado y prioridad), guarda el nuevo registro con `h.queries.CreateTask(ctx, ...)` e implementa el patrón **Post/Redirect/Get (PRG)** redirigiendo a `/` para refrescar la lista evitando reenvíos duplicados.
+- **`pkg/handlers/CRUD.go` y `pkg/handlers/consultas.go`**: Mantenidos en el paquete para preservar el histórico de controladores de persistencia y consultas (TP anteriores).
+- **`main.go`**: Responsable de la inicialización y carga de variables desde `.env`, apertura y verificación de conexión a PostgreSQL, inyección de dependencias (`handlers.New(queries)`), registro de rutas en `http.ServeMux` e inicio del servidor HTTP con middleware de logging.
 
-### Endpoints CRUD principales
+**Capa de Datos y Persistencia (`db/sqlc/`, PostgreSQL):**
 
-| Método   | Endpoint                   | Descripción                                              | Código Éxito     | Códigos de Error                   |
-| :------- | :------------------------- | :------------------------------------------------------- | :--------------- | :--------------------------------- |
-| `POST`   | `/tasks`                   | Crear una nueva tarea con validación de datos            | `201 Created`    | `400 Bad Request`                  |
-| `GET`    | `/tasks`                   | Listar tareas (con soporte de filtros por query params)  | `200 OK`         | `500 Internal Server Error`        |
-| `GET`    | `/tasks/{id}`              | Obtener el detalle de una tarea por su ID                | `200 OK`         | `400 Bad Request`, `404 Not Found` |
-| `PUT`    | `/tasks/{id}`              | Actualizar todos los campos de una tarea existente       | `200 OK`         | `400 Bad Request`, `404 Not Found` |
-| `PATCH`  | `/tasks/{id}`              | Acción rápida: marcar tarea directamente como Completada | `200 OK`         | `400 Bad Request`, `404 Not Found` |
-| `DELETE` | `/tasks/{id}`              | Eliminar una tarea por su ID                             | `204 No Content` | `400 Bad Request`, `404 Not Found` |
-| `DELETE` | `/tasks?estado=Completada` | Limpieza masiva en lote de todas las tareas completadas  | `200 OK`         | `400 Bad Request`                  |
-| `GET`    | `/health`                  | Chequeo de salud del servicio (liveness/readiness)       | `200 OK`         | —                                  |
+- Repositorio generado por **sqlc**, y consultas parametrizadas sin riesgo de inyecciones SQL.
 
-### Endpoints especializados y métricas (Dashboard)
+**Variables de entorno (`.env.example` y automatización de `.env`):**
 
-| Método | Endpoint         | Descripción                                                     | Código Éxito |
-| :----- | :--------------- | :-------------------------------------------------------------- | :----------- |
-| `GET`  | `/tasks/metrics` | Resumen: total, pendientes, en progreso, completadas y vencidas | `200 OK`     |
-| `GET`  | `/tasks/overdue` | Listar tareas vencidas (`vencimiento < NOW()` y no completadas) | `200 OK`     |
-
-### Parámetros de Consulta (Query Params) en `GET /tasks`
-
-El endpoint `GET /tasks` permite filtrar, buscar y ordenar las tareas para alimentar vistas dinámicas del frontend:
-
-- `GET /tasks?q=palabra`: Búsqueda textual por palabra clave en título y descripción (`ILIKE`).
-- `GET /tasks?prioridad=Alta`: Filtra tareas por prioridad (`Alta`, `Media`, `Baja`).
-- `GET /tasks?orden=vencimiento`: Retorna tareas pendientes ordenadas ascendentemente por fecha de vencimiento más próxima.
-- `GET /tasks?vence_en=7`: Lista tareas que vencen en los próximos _N_ días.
-- `GET /tasks?completadas_ultimos_dias=30`: Lista tareas completadas dentro de la ventana de los últimos _N_ días.
-- `GET /tasks` (sin parámetros): Retorna todas las tareas ordenadas por ID.
+- Se provee una plantilla de configuración `.env.example`.
+- Tanto `run-app.sh`, el `Makefile` como la propia aplicación Go (`main.go`) **detectan automáticamente** si `.env` existe; si no está presente, **lo generan automáticamente a partir de `.env.example`**.
 
 ---
 
-## 3. Validaciones de Dominio y Middleware
+## 2. Flujo de Navegación: Patrón Post/Redirect/Get (PRG)
 
-- **Validaciones (`pkg/models/models.go`):**
-  - El título es obligatorio y no puede superar los 255 caracteres.
-  - El estado debe ser uno de: `"Pendiente"`, `"En Progreso"`, `"Completada"`.
-  - La prioridad debe ser una de: `"Baja"`, `"Media"`, `"Alta"`.
-  - `ApplyDefaults`: Asigna `"Pendiente"` y `"Media"` automáticamente si no se especifican.
-- **Middleware de Observabilidad (`main.go`):**
-  - Implementa el patrón `loggingMiddleware(next http.Handler)` enseñado en la cátedra.
-  - Registra cada petición entrante con timestamp, método, URL, IP remota y duración de procesamiento.
+```
+[ Navegador ] ---- GET / -----------------------------------> [ Handler.IndexHandler ]
+             <--- 200 OK (HTML renderizado con Templ) ------- (Consulta DB)
+
+[ Formulario ] --- POST /tasks (datos del form) ------------> [ Handler.CreateTaskHandler ]
+                                                              (Guarda en DB)
+             <--- 303 See Other (Location: /) --------------
+
+[ Navegador ] ---- GET / -----------------------------------> [ Handler.IndexHandler ]
+             <--- 200 OK (HTML con la lista actualizada) ---- (Consulta DB)
+```
 
 ---
 
-## 4. Estructura del Proyecto
+## 3. Estructura del Proyecto
 
 ```text
-├── .dockerignore            # Exclusión de archivos para el contexto de build Docker
+├── .dockerignore            # Exclusión de binarios y temporales en Docker
+├── .env.example             # Plantilla base para variables de entorno (PORT, DATABASE_URL)
 ├── .gitignore               # Exclusión de binarios, scripts locales y temporales
 ├── Dockerfile               # Multi-stage build optimizado (golang:alpine -> alpine)
-├── docker-compose.yml       # Stack completo: PostgreSQL (db) + API REST (api)
-├── Makefile                 # Automatización de tareas (test-api, test, run, clean)
-├── test-api.sh              # Script Bash para probar la API (TP3)
-├── test.sh                  # Script Bash para suite de pruebas unitarias (TP2)
-├── requests.hurl            # Archivo de pruebas reproducibles con HURL
-├── schema.sql               # Esquema DDL de PostgreSQL
-├── queries.sql              # Consultas SQL con anotaciones sqlc
-├── sqlc.yaml                # Configuración de sqlc
-├── README.md                # Documentación de la Entrega 3
+├── docker-compose.yml       # Stack completo: PostgreSQL (db) + aplicación SSR (app)
+├── requests.hurl            # Archivo de pruebas reproducibles con HURL (TP3)
+├── Makefile                 # Automatización de tareas
+├── run-app.sh               # Script Bash para ejecutar la aplicación (TP5)
+├── schema.sql               # Esquema DDL de PostgreSQL (TP2)
+├── queries.sql              # Consultas SQL con anotaciones sqlc (TP2)
+├── sqlc.yaml                # Configuración de sqlc (TP2)
+├── README.md                # Documentación de la Entrega 5
 ├── go.mod                   # Definición del módulo y dependencias Go
 ├── go.sum                   # Checksums de dependencias Go
 ├── index.html               # Frontend básico (TP1)
-├── main.go                  # Servidor web (TP1). Punto de entrada del servidor HTTP y middleware
+├── main.go                  # Bootstrap del servidor, conexión DB y registro de rutas
 ├── pkg/
 │   ├── handlers/
-│   │   └── handler.go       # Handlers HTTP CRUD y queries
+│   │   ├── ssr.go           # Handlers SSR con Templ (IndexHandler y CreateTaskHandler)
+│   │   ├── CRUD.go          # Handlers CRUD (TP3)
+│   │   └── consultas.go     # Consultas avanzadas (TP3)
 │   └── models/
-│       ├── models.go        # Entidades del dominio, defaults y validaciones
-│       └── models_test.go   # Pruebas unitarias de la lógica pura (Table-Driven)
+│       ├── models.go        # Modelos del dominio (TP3)
+│       └── models_test.go   # Pruebas unitarias de modelos (TP3)
+├── views/                   # Componentes de interfaz de usuario con Templ
+│   ├── layout.templ         # Estructura base HTML con link a Pico.css
+│   ├── entity_form.templ    # Formulario para crear tareas
+│   ├── entity_list.templ    # Tabla de listado de tareas
+│   └── index.templ          # Vista principal IndexPage
 └── db/
-    ├── schema/ schema.sql    # DDL relacional de tasks
-    ├── queries/ queries.sql  # Consultas CRUD y avanzadas
-    └── sqlc/ tasks_test.go   # Suite de pruebas unitarias/integración
+    ├── schema/schema.sql    # DDL relacional de tasks (TP2)
+    ├── queries/queries.sql  # Consultas CRUD y avanzadas (TP2)
+    └── sqlc/                # Repositorio Go generado en tiempo de compilación
+         └── tasks_test.go   # Suite de pruebas unitarias/integración (TP2)
+
 ```
 
 ---
 
-## 5. Requisitos previos
-
-Para ejecutar y probar el proyecto se requiere:
+## 4. Requisitos Previos
 
 - **[Docker](https://docs.docker.com/get-docker/)** y **Docker Compose**.
 - **[Go](https://go.dev/dl/)** (versión 1.22 o superior).
-- **Bash** para ejecutar los scripts (disponible en Linux/macOS y en Git Bash para Windows) o **Make**.
-- **[Hurl](https://hurl.dev/)** para ejecutar directamente el archivo `requests.hurl`.
+- **Bash** (disponible en Linux/macOS y Git Bash en Windows) o **Make**.
+- _(Opcional)_ Herramientas `templ` y `sqlc` CLI. Si no están en `PATH`, los scripts las ejecutan automáticamente mediante `go run`.
 
 ---
 
-## 6. Ejecución de pruebas de la API (Consigna TP3)
+## 5. Ejecución de la Aplicación (TP5)
 
-Para probar el proyecto tras clonar el repositorio y posicionarse en la rama `tp3`:
-
-```bash
-git checkout tp3
-```
-
-Se provee el script `test-api.sh` y el `Makefile` que realizan **todas las tareas de forma 100% desatendida**:
-
-### Opción A (Recomendada con Bash):
+Para probar el proyecto tras clonar el repositorio y situarse en la rama `tp5`:
 
 ```bash
-./test-api.sh
+git checkout tp5
 ```
 
-_(o también: `bash test-api.sh`)_
+Se provee el script `run-app.sh` y el `Makefile` que realizan **todas las tareas de forma 100% automatizada y desatendida**:
 
-### Opción B (Con Make):
+### Opción A (Recomendada con Bash)
 
 ```bash
-make test-api
+./run-app.sh
 ```
+
+_(o también: `bash run-app.sh`)_
+
+### Opción B (Con Make)
+
+```bash
+make run-app
+```
+
+Una vez iniciado, abre tu navegador web en:
+**[http://localhost:8080](http://localhost:8080)**
+
+Para detener la aplicación, presiona `Ctrl+C` en la terminal. El script limpiará automáticamente todos los contenedores y volúmenes creados.
 
 ---
 
-## 7. Fases de la automatización (`test-api.sh`)
+## 6. Fases de la Automatización (`run-app.sh`)
 
-El script coordina automáticamente las tres etapas:
+El script coordina las 3 etapas exigidas:
 
 1. **Tareas Previas:**
+   - Creación automática de `.env` a partir de `.env.example` si no existe.
    - Limpieza preventiva de contenedores o volúmenes huérfanos anteriores (`docker compose down -v`).
-   - Ejecución de `sqlc generate` para asegurar que el código Go esté sincronizado con el esquema.
-   - Verificación de dependencias y compilación del ejecutable (`go mod tidy`, `go build`).
+   - Ejecución de `sqlc generate` para sincronizar la persistencia.
+   - Ejecución de `templ generate` para compilar los componentes de vista a Go.
+   - Verificación de dependencias y compilación del binario del servidor (`go mod tidy`, `go build`).
    - Levantamiento del contenedor de base de datos PostgreSQL (`docker compose up -d db`).
-   - Espera activa (_polling_ con `pg_isready`) hasta que PostgreSQL acepte conexiones.
-   - Levantamiento del servidor API en segundo plano y verificación de liveness (`/health`).
+   - Espera activa con `pg_isready` hasta que PostgreSQL acepte conexiones.
 
-2. **Prueba de cada uno de los Endpoints:**
-   - Si **Hurl** está instalado en el sistema, ejecuta `hurl --test requests.hurl`.
-   - Se valida:
-     1. `POST /tasks` (Crear tarea válida): verifica HTTP `201` y captura el `id` asignado.
-     2. `POST /tasks` (Título vacío): verifica HTTP `400` por error de validación.
-     3. `GET /tasks` (Listar tareas): verifica HTTP `200` y arreglo JSON no nulo.
-     4. `GET /tasks/{id}` (Obtener por ID): verifica HTTP `200` y concordancia de datos.
-     5. `GET /tasks/999999` (ID inexistente): verifica HTTP `404`.
-     6. `GET /tasks/invalido` (ID alfanumérico): verifica HTTP `400`.
-     7. `PUT /tasks/{id}` (Actualizar tarea): verifica HTTP `200` y persistencia de cambios.
-     8. `PUT /tasks/999999` (Actualizar ID inexistente): verifica HTTP `404`.
-     9. `POST /tasks` (Crear segunda tarea para pruebas avanzadas): verifica HTTP `201`.
-     10. `GET /tasks?prioridad=Alta` (Filtrar por prioridad): verifica HTTP `200`.
-     11. `GET /tasks?q=documentacion` (Búsqueda por palabra clave): verifica HTTP `200`.
-     12. `GET /tasks?orden=vencimiento` (Ordenar pendientes por vencimiento): verifica HTTP `200`.
-     13. `GET /tasks/metrics` (Dashboard de métricas): verifica HTTP `200` y conteos numéricos.
-     14. `GET /tasks/overdue` (Listado de tareas vencidas): verifica HTTP `200`.
-     15. `PATCH /tasks/{id}` (Acción rápida: marcar completada): verifica HTTP `200`.
-     16. `DELETE /tasks/{id}` (Eliminar tarea 2): verifica HTTP `204`.
-     17. `GET /tasks/{id}` (Verificar borrado de tarea 2): verifica HTTP `404`.
-     18. `DELETE /tasks?estado=Completada` (Borrado masivo en lote): verifica HTTP `200`.
-     19. `DELETE /tasks/999999` (Eliminar ID inexistente): verifica HTTP `404`.
+2. **Ejecución de la aplicación:**
+   - Inicia el servidor SSR en el puerto configurado (por defecto `:8080`), listo para responder peticiones desde cualquier navegador.
 
 3. **Tareas Posteriores:**
-   - Mediante `trap cleanup EXIT`, detiene el proceso del servidor API y destruye los contenedores y volúmenes de Docker (`docker compose down -v --remove-orphans`), garantizando un entorno limpio tanto si las pruebas finalizan con éxito como ante cualquier error.
+   - Mediante el manejador de señales `trap cleanup EXIT INT TERM`, al presionar `Ctrl+C` o cerrar la aplicación, detiene el proceso y borra automáticamente los contenedores y volúmenes de Docker (`docker compose down -v --remove-orphans`).
 
 ---
 
-## 8. Ejecución del Servidor en Desarrollo
+## 7. Ejecución con Docker Compose (Stack Completo)
 
-### Con Docker Compose (Stack Completo):
+Si se desea levantar todo el entorno (aplicación + base de datos) dentro de contenedores:
 
 ```bash
 docker compose up --build
 ```
 
-_(o con `make run`)_
-
-### De forma local:
-
-```bash
-# 1. Levantar base de datos
-docker compose up -d db
-
-# 2. Iniciar servidor Go
-go run main.go
-```
+_(o también: `make run`)_

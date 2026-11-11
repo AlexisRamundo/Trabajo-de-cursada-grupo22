@@ -19,9 +19,9 @@ services:
       retries: 20
       start_period: 3s
 
-  api:
+  app:
     build: .
-    container_name: todolist-api
+    container_name: todolist-app
     restart: "no"
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/todolist_test?sslmode=disable

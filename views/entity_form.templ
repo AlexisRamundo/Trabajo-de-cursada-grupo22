@@ -1,0 +1,54 @@
+package views
+
+templ EntityForm() {
+	<form action="/tasks" method="POST">
+		<fieldset>
+			<label for="titulo">
+				Título *
+				<input
+					type="text"
+					id="titulo"
+					name="titulo"
+					placeholder="Ej. Estudiar para el examen final"
+					required
+				/>
+			</label>
+			<label for="descripcion">
+				Descripción
+				<textarea
+					id="descripcion"
+					name="descripcion"
+					rows="3"
+					placeholder="Detalles adicionales sobre la tarea a realizar..."
+				></textarea>
+			</label>
+			<div class="grid">
+				<label for="estado">
+					Estado
+					<select id="estado" name="estado">
+						<option value="Pendiente" selected>Pendiente</option>
+						<option value="En Progreso">En Progreso</option>
+						<option value="Completada">Completada</option>
+					</select>
+				</label>
+				<label for="prioridad">
+					Prioridad
+					<select id="prioridad" name="prioridad">
+						<option value="Baja">Baja</option>
+						<option value="Media" selected>Media</option>
+						<option value="Alta">Alta</option>
+					</select>
+				</label>
+				<label for="vencimiento">
+					Fecha de Vencimiento
+					<input
+						type="datetime-local"
+						id="vencimiento"
+						name="vencimiento"
+					/>
+				</label>
+			</div>
+		</fieldset>
+		<button type="submit">Crear tarea</button>
+	</form>
+}
