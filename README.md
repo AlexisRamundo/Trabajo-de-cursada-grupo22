@@ -14,9 +14,14 @@ Sexta y última entrega del Trabajo Práctico de cursada. En esta etapa se evolu
 
 ---
 
-## 1. Arquitectura de Software: Arquitectura Onion
+## 1. Arquitectura de la aplicación: Arquitectura Onion
 
 Para desacoplar completamente la lógica de negocio, la persistencia y la capa de presentación web, se estructuró el backend bajo los principios de la **Arquitectura Onion**. En esta arquitectura, **todas las dependencias apuntan exclusivamente hacia el centro** (el dominio), aplicando inversión de dependencias:
+
+![Arquitectura Onion](docs/img/arquitectura.png)
+
+<details>
+<summary>Ver código fuente Mermaid</summary>
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'edgeLabelBackground': '#ffffff'}, 'flowchart': {'nodeSpacing': 30, 'rankSpacing': 45, 'wrappingWidth': 420}}}%%
@@ -69,6 +74,10 @@ flowchart TB
     style DOM fill:#fff1b8,stroke:#d4b85a
     style INFRA fill:#b4ffb4,stroke:#7fcf7f
 ```
+
+</details>
+
+---
 
 ### Capas del Sistema:
 
@@ -126,6 +135,11 @@ flowchart TB
 ## 2. Reactividad con HTMX
 
 La integración de **HTMX** elimina las recargas completas de pantalla reemplazando dinámicamente fragmentos específicos del DOM:
+
+![Secuencia de flujo Reactividad HTMX](docs/img/flujo.png)
+
+<details>
+<summary>Ver código fuente Mermaid</summary>
 
 ```mermaid
 %%{init: {'theme': 'base'}}%%
@@ -211,6 +225,10 @@ sequenceDiagram
     Note right of B: se actualizan contadores y toolbar
 ```
 
+</details>
+
+---
+
 ### Características implementadas:
 
 - **Inclusión en el `<head>` (`views/layout.templ`):** Carga HTMX v4 vía CDN de jsDelivr.
@@ -258,6 +276,7 @@ Como vimos, el uso de HTMX no hace que debamos dejar de lado lo visto en entrega
 ├── run-app.sh               # Script Bash para ejecutar la aplicación (TP6)
 ├── test.sh                  # Script Bash desatendido para correr toda la suite de tests
 ├── README.md                # Documentación de la entrega final (TP6)
+├── docs/ img                # Recursos de documentación
 ├── go.mod                   # Definición del módulo y dependencias Go
 ├── go.sum                   # Checksums de dependencias Go
 ├── index.html               # Frontend básico (TP1)
