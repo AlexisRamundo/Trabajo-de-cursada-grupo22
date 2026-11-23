@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# Script de Ejecución (TP5)
-# Renderizado del Lado del Servidor (SSR)
+# Script de Ejecución (TP6)
+# Interfaces Reactivas con HTMX
 
 set -euo pipefail
 
@@ -17,7 +17,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "============================================================"
-echo "    TP5 - Renderizado del Lado del Servidor con Templ       "
+echo "    TP6 - Interfaces Reactivas con HTMX       "
 echo "============================================================"
 
 echo "==> [1/3] Tareas previas..."

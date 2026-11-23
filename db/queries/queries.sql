@@ -33,6 +33,11 @@ RETURNING *;
 DELETE FROM tasks
 WHERE id = $1;
 
+-- Borrado que informa cuántas filas eliminó (0 = la tarea no existía)
+-- name: DeleteTaskByID :execrows
+DELETE FROM tasks
+WHERE id = $1;
+
 -- Ordenar por estado (pendiente) y fecha vencimiento
 -- name: ListPendingTasksOrderByDueDate :many
 SELECT * FROM tasks
@@ -98,6 +103,13 @@ ORDER BY vencimiento ASC;
 -- name: MarkTaskCompleted :one
 UPDATE tasks
 SET estado = 'Completada'
+WHERE id = $1
+RETURNING *;
+
+-- Modificación de estado de la tarea (Pendiente, En Progreso, Completada)
+-- name: UpdateTaskStatus :one
+UPDATE tasks
+SET estado = $2
 WHERE id = $1
 RETURNING *;
 

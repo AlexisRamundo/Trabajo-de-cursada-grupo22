@@ -1,14 +1,39 @@
 package views
 
-import (
-	"fmt"
-	db "servidor/db/sqlc"
-)
+import "fmt"
 
-templ EntityList(tasks []db.Task) {
+templ TasksToolbar(tasks []TaskDTO) {
+	<div
+		id="tasks-toolbar"
+		style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; gap: 1rem; flex-wrap: wrap;"
+		hx-get="/tasks/toolbar"
+		hx-trigger="taskChanged from:body"
+		hx-swap="outerHTML"
+	>
+		<div>
+			<small><strong>Mostrando { fmt.Sprint(len(tasks)) } tarea(s)</strong></small>
+		</div>
+		if HasCompleted(tasks) {
+			<button
+				type="button"
+				class="secondary outline"
+				style="margin-bottom: 0; padding: 0.35rem 0.75rem; font-size: 0.85rem;"
+				hx-delete="/tasks/completed"
+				hx-target="#tasks-container"
+				hx-swap="outerHTML"
+				hx-confirm="¿Seguro que deseas eliminar todas las tareas completadas?"
+			>
+				Limpiar completadas
+			</button>
+		}
+	</div>
+}
+
+templ EntityList(tasks []TaskDTO) {
 	<div id="tasks-container" class="overflow-auto">
+		@TasksToolbar(tasks)
 		if len(tasks) == 0 {
-			<p><em>No hay tareas registradas en el sistema. Utiliza el formulario superior para crear la primera.</em></p>
+			<p><em>No hay tareas registradas en el sistema. Utiliza el formulario superior para crear la primera o prueba con otro término de búsqueda.</em></p>
 		} else {
 			<table class="striped">
 				<thead>
@@ -20,30 +45,97 @@ templ EntityList(tasks []db.Task) {
 						<th scope="col">Prioridad</th>
 						<th scope="col">Creación</th>
 						<th scope="col">Vencimiento</th>
+						<th scope="col">Acciones</th>
 					</tr>
 				</thead>
 				<tbody>
 					for _, task := range tasks {
-						<tr>
-							<th scope="row">{ fmt.Sprint(task.ID) }</th>
-							<td><strong>{ task.Titulo }</strong></td>
-							<td>{ task.Descripcion }</td>
-							<td>
-								<mark>{ task.Estado }</mark>
-							</td>
-							<td>{ task.Prioridad }</td>
-							<td>{ task.CreadoEn.Format("02/01/2006 15:04") }</td>
-							<td>
-								if task.Vencimiento.Valid {
-									{ task.Vencimiento.Time.Format("02/01/2006 15:04") }
-								} else {
-									<span>-</span>
-								}
-							</td>
-						</tr>
+						@TaskRow(task)
 					}
 				</tbody>
 			</table>
 		}
 	</div>
+}
+
+templ TaskRow(task TaskDTO) {
+	<tr>
+		<th scope="row">{ fmt.Sprint(task.ID) }</th>
+		<td><strong>{ task.Titulo }</strong></td>
+		<td>{ task.Descripcion }</td>
+		<td>
+			<select
+				name="estado"
+				hx-patch={ fmt.Sprintf("/tasks/%d/status", task.ID) }
+				hx-target="closest tr"
+				hx-swap="outerHTML"
+				aria-label="Modificar estado de tarea"
+				style="margin-bottom: 0; padding: 0.2rem 0.4rem; font-size: 0.85rem; width: auto;"
+			>
+				if task.Estado == "Pendiente" {
+					<option value="Pendiente" selected>Pendiente</option>
+				} else {
+					<option value="Pendiente">Pendiente</option>
+				}
+				if task.Estado == "En Progreso" {
+					<option value="En Progreso" selected>En Progreso</option>
+				} else {
+					<option value="En Progreso">En Progreso</option>
+				}
+				if task.Estado == "Completada" {
+					<option value="Completada" selected>Completada</option>
+				} else {
+					<option value="Completada">Completada</option>
+				}
+			</select>
+		</td>
+		<td>{ task.Prioridad }</td>
+		<td>{ task.CreadoEn }</td>
+		<td>
+			if task.Vencimiento != "" {
+				{ task.Vencimiento }
+			} else {
+				<span>-</span>
+			}
+		</td>
+		<td>
+			<div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+				if task.Estado == "Pendiente" {
+					<button
+						type="button"
+						class="outline"
+						style="margin-bottom: 0; padding: 0.25rem 0.5rem; font-size: 0.8rem;"
+						hx-patch={ fmt.Sprintf("/tasks/%d/status", task.ID) }
+						hx-vals='{"estado": "En Progreso"}'
+						hx-target="closest tr"
+						hx-swap="outerHTML"
+					>
+						Iniciar
+					</button>
+				}
+				if !task.Completada {
+					<button
+						type="button"
+						style="margin-bottom: 0; padding: 0.25rem 0.5rem; font-size: 0.8rem;"
+						hx-patch={ fmt.Sprintf("/tasks/%d", task.ID) }
+						hx-target="closest tr"
+						hx-swap="outerHTML"
+					>
+						Completar
+					</button>
+				}
+				<button
+					type="button"
+					class="secondary outline"
+					style="margin-bottom: 0; padding: 0.25rem 0.5rem; font-size: 0.8rem;"
+					hx-delete={ fmt.Sprintf("/tasks/%d", task.ID) }
+					hx-target="closest tr"
+					hx-swap="outerHTML"
+					hx-confirm="¿Seguro que querés borrar esta tarea?"
+				>
+					Borrar
+				</button>
+			</div>
+		</td>
+	</tr>
 }

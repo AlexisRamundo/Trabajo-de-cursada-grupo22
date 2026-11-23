@@ -12,8 +12,10 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // registra el driver "pgx" para database/sql
 
-	db "servidor/db/sqlc"
+	"servidor/pkg/application"
 	"servidor/pkg/handlers"
+	"servidor/pkg/infrastructure"
+	"servidor/pkg/models"
 )
 
 // ensureAndLoadEnv verifica la existencia del archivo .env. Si no existe, lo genera
@@ -113,9 +115,28 @@ func main() {
 		log.Fatalf("No se pudo conectar a la base de datos: %v", err)
 	}
 
-	// 2. Instancia del repositorio generado por sqlc y handlers HTTP
-	queries := db.New(conn)
-	h := handlers.New(queries)
+	// 2. Composición de la arquitectura Onion:
+	//    Infraestructura (repo con sqlc) -> Aplicación (casos de uso) -> UI (handlers)
+	var taskRepo models.TaskRepository = infrastructure.NewPostgresTaskRepository(conn)
+	listTasks := application.NewListTasksUseCase(taskRepo)
+	createTask := application.NewCreateTaskUseCase(taskRepo)
+	deleteTask := application.NewDeleteTaskUseCase(taskRepo)
+	completeTask := application.NewCompleteTaskUseCase(taskRepo)
+	searchTasks := application.NewSearchTasksUseCase(taskRepo)
+	getMetrics := application.NewGetMetricsUseCase(taskRepo)
+	clearCompleted := application.NewClearCompletedTasksUseCase(taskRepo)
+	updateTaskStatus := application.NewUpdateTaskStatusUseCase(taskRepo)
+
+	h := handlers.NewSSRHandler(
+		listTasks,
+		createTask,
+		deleteTask,
+		completeTask,
+		searchTasks,
+		getMetrics,
+		clearCompleted,
+		updateTaskStatus,
+	)
 
 	// 3. Registro de rutas
 	mux := http.NewServeMux()
@@ -127,9 +148,15 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// Handlers principales de la aplicación SSR con Templ (patrón PRG)
+	// Handlers principales de la aplicación con HTMX y Arquitectura Onion
+	mux.HandleFunc("GET /metrics", h.MetricsHandler)
+	mux.HandleFunc("GET /tasks/toolbar", h.TasksToolbarHandler)
 	mux.HandleFunc("/", h.IndexHandler)
-	mux.HandleFunc("/tasks", h.CreateTaskHandler)
+	mux.HandleFunc("POST /tasks", h.CreateTaskHandler)
+	mux.HandleFunc("DELETE /tasks/completed", h.ClearCompletedHandler)
+	mux.HandleFunc("DELETE /tasks/{id}", h.DeleteTaskHandler)
+	mux.HandleFunc("PATCH /tasks/{id}/status", h.UpdateTaskStatusHandler)
+	mux.HandleFunc("PATCH /tasks/{id}", h.CompleteTaskHandler)
 
 	// 4. Configuración del puerto e inicio del servidor HTTP
 	port := os.Getenv("PORT")

@@ -31,6 +31,19 @@ else
     go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
 fi
 
+# 2.5. Ejecución de templ para generar componentes Go de las vistas
+echo " -> Ejecutando templ generate..."
+if command -v templ >/dev/null 2>&1; then
+    templ generate
+elif [ -f "$(go env GOPATH)/bin/templ" ]; then
+    "$(go env GOPATH)/bin/templ" generate
+elif [ -f "$(go env GOPATH)/bin/templ.exe" ]; then
+    "$(go env GOPATH)/bin/templ.exe" generate
+else
+    echo "templ no encontrado en PATH, ejecutando via go run..."
+    go run github.com/a-h/templ/cmd/templ@v0.3.1100 generate
+fi
+
 # 3. Descarga de dependencias y verificación de compilación
 echo " -> Verificando dependencias y compilacion..."
 go mod tidy

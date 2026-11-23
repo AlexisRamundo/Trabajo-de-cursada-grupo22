@@ -1,15 +1,16 @@
 package views
 
-import db "servidor/db/sqlc"
-
-templ IndexPage(tasks []db.Task) {
+templ IndexPage(tasks []TaskDTO, metrics MetricsDTO) {
 	@Layout("App de gestión de tareas") {
 		<header style="margin-bottom: 2rem;">
 			<hgroup>
-				<h1>App de gestión de tareas (To-Do List) - Grupo 22 </h1>
-				<p>Programación Web - Renderizado del lado del servidor (TP5)</p>
+				<h1>App de gestión de tareas (To-Do List) - Grupo 22</h1>
+				<p>Programación Web - Interfaces Reactivas con HTMX (TP6)</p>
 			</hgroup>
 		</header>
+		<section style="margin-bottom: 2rem;">
+			@MetricsCards(metrics, false)
+		</section>
 		<section style="margin-bottom: 2rem;">
 			<article>
 				<header>
@@ -20,8 +21,21 @@ templ IndexPage(tasks []db.Task) {
 		</section>
 		<section>
 			<article>
-				<header>
-					<h2>Listado de tareas</h2>
+				<header style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+					<h2 style="margin-bottom: 0;">Listado de tareas</h2>
+					<div style="flex-grow: 1; max-width: 400px;">
+						<input
+							type="search"
+							name="q"
+							placeholder="Buscar por título o descripción..."
+							aria-label="Buscar tareas"
+							hx-get="/"
+							hx-trigger="input changed delay:300ms, search"
+							hx-target="#tasks-container"
+							hx-swap="outerHTML"
+							style="margin-bottom: 0;"
+						/>
+					</div>
 				</header>
 				@EntityList(tasks)
 			</article>

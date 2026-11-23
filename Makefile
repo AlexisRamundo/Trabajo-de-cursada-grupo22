@@ -1,4 +1,4 @@
-.PHONY: all env generate compile up wait-db run-app run down clean
+.PHONY: all env generate compile up wait-db run-app run test down clean
 
 all: run-app
 
@@ -31,7 +31,7 @@ wait-db:
 	@bash -c 'until docker compose exec -T db pg_isready -U postgres -d todolist_test > /dev/null 2>&1; do sleep 1; done; sleep 1'
 	@echo "==> PostgreSQL esta listo."
 
-# 5. Ejecutar aplicacion completa SSR (TP5)
+# 5. Ejecutar aplicacion completa con HTMX (TP6)
 run-app: env
 	@bash run-app.sh
 
@@ -40,7 +40,11 @@ run: env generate
 	@echo "==> Levantando stack completo con Docker Compose..."
 	@docker compose up --build
 
-# 7. Tareas posteriores y limpieza
+# 7. Ejecutar suite completa de tests automatizados
+test: env
+	@bash test.sh
+
+# 8. Tareas posteriores y limpieza
 down:
 	@echo "==> Limpiando contenedores y volumenes de Docker..."
 	@docker compose down -v --remove-orphans

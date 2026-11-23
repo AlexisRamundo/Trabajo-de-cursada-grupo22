@@ -1,7 +1,15 @@
 package views
 
 templ EntityForm() {
-	<form action="/tasks" method="POST">
+	<form
+		id="entity-form"
+		action="/tasks"
+		method="POST"
+		hx-post="/tasks"
+		hx-target="#tasks-container"
+		hx-swap="outerHTML"
+		hx-on:htmx:after:swap="this.reset()"
+	>
 		<fieldset>
 			<label for="titulo">
 				Título *

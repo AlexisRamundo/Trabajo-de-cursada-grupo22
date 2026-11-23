@@ -1,0 +1,38 @@
+package views
+
+import "fmt"
+
+templ MetricsCards(m MetricsDTO, oob bool) {
+	<div
+		id="metrics-container"
+		class="grid"
+		style="margin-bottom: 1.5rem;"
+		hx-get="/metrics"
+		hx-trigger="taskChanged from:body"
+		hx-swap="outerHTML"
+		if oob {
+			hx-swap-oob="true"
+		}
+	>
+		<article style="padding: 0.75rem 1rem; text-align: center; margin-bottom: 0;">
+			<header style="margin-bottom: 0.25rem;"><small>Total</small></header>
+			<strong style="font-size: 1.25rem;">{ fmt.Sprint(m.Total) }</strong>
+		</article>
+		<article style="padding: 0.75rem 1rem; text-align: center; margin-bottom: 0;">
+			<header style="margin-bottom: 0.25rem;"><small>Pendientes</small></header>
+			<strong style="font-size: 1.25rem; color: #d97706;">{ fmt.Sprint(m.Pendientes) }</strong>
+		</article>
+		<article style="padding: 0.75rem 1rem; text-align: center; margin-bottom: 0;">
+			<header style="margin-bottom: 0.25rem;"><small>En Progreso</small></header>
+			<strong style="font-size: 1.25rem; color: #2563eb;">{ fmt.Sprint(m.EnProgreso) }</strong>
+		</article>
+		<article style="padding: 0.75rem 1rem; text-align: center; margin-bottom: 0;">
+			<header style="margin-bottom: 0.25rem;"><small>Completadas</small></header>
+			<strong style="font-size: 1.25rem; color: #16a34a;">{ fmt.Sprint(m.Completadas) }</strong>
+		</article>
+		<article style="padding: 0.75rem 1rem; text-align: center; margin-bottom: 0;">
+			<header style="margin-bottom: 0.25rem;"><small>Vencidas</small></header>
+			<strong style="font-size: 1.25rem; color: #dc2626;">{ fmt.Sprint(m.Vencidas) }</strong>
+		</article>
+	</div>
+}
